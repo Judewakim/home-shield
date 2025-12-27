@@ -29,18 +29,26 @@ Lead:
 
 Lead Attributes (minimum required):
 - lead_id (UUID)
-- received_at (UTC timestamp, authoritative)
 - source
 - state
 - raw_payload
 - classification (Gold | Silver)
-- created_at (UTC timestamp, system-generated)
+- created_at_utc (UTC timestamp, authoritative)
 
 Age:
 - Lead age is calculated in whole calendar days.
 - Age is defined as:
-  age_days = floor((current_utc_time - received_at) / 24 hours)
+  age_days = floor((as_of_utc - created_at_utc) / 24 hours)
 - Partial days are not rounded up.
+
+Month Definition (Explicit):
+- “Months” are defined as fixed 30-day intervals.
+- No calendar month logic
+- No partial month rounding
+- No date arithmetic beyond day-diff
+
+Formal Definition:
+  age_months = floor(age_days / 30)
 
 Age Bucket:
 - An Age Bucket represents a discrete resale eligibility window.
@@ -59,6 +67,9 @@ Age Bucket:
 
     MONTH_24_PLUS:
     age_days ≥ 720
+
+Leads Younger Than 90 Days:
+- Leads with age_days < 90 do not fall into any Age Bucket and are not sellable.
 
 ========================================
 SECTION 2 — LEAD CLASSIFICATION RULES
@@ -116,6 +127,13 @@ Universal Eligibility Rule:
 - A Lead is eligible for sale in an Age Bucket if:
   - The Lead's age falls within the bucket range
   - No prior sale exists for (lead_id, age_bucket)
+
+Bucket Eligibility (applies to ALL leads):
+- MONTH_3_TO_5: eligible
+- MONTH_6_TO_8: eligible
+- MONTH_9_TO_11: eligible
+- MONTH_12_TO_23: eligible
+- MONTH_24_PLUS: eligible
 
 ========================================
 SECTION 5 — SALE CONSTRAINTS

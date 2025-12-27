@@ -16,17 +16,11 @@ inventory tracking logic.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from uuid import UUID
 
-from age_bucket import AgeBucket
-
-
-def _require_utc_timestamp(name: str, value: datetime) -> None:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError(f"{name} must be timezone-aware (UTC)")
-    if value.utcoffset() != timedelta(0):
-        raise ValueError(f"{name} must be a UTC timestamp (offset 0)")
+from .age_bucket import AgeBucket
+from .time import require_utc_timestamp
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,5 +36,5 @@ class SaleRecord:
     sold_at: datetime
 
     def __post_init__(self) -> None:
-        _require_utc_timestamp("sold_at", self.sold_at)
+        require_utc_timestamp("sold_at", self.sold_at)
 

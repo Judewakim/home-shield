@@ -7,12 +7,17 @@ This module is governed by:
 
 Contract excerpts implemented here:
 - Lead age is calculated in whole 24-hour days:
-  age_days = floor((current_utc_time - received_at) / 24 hours)
+  age_days = floor((as_of_utc - created_at_utc) / 24 hours)
+- Months are fixed 30-day intervals:
+  age_months = floor(age_days / 30)
 - Buckets are defined strictly as:
-  - DAY_0: age_days == 0
-  - DAY_1: age_days == 1
-  - DAY_2: age_days == 2
-  - DAY_3_PLUS: age_days >= 3
+  - MONTH_3_TO_5: age_days ∈ [  90, 179 ]
+  - MONTH_6_TO_8: age_days ∈ [ 180, 269 ]
+  - MONTH_9_TO_11: age_days ∈ [ 270, 359 ]
+  - MONTH_12_TO_23: age_days ∈ [ 360, 719 ]
+  - MONTH_24_PLUS: age_days ≥ 720
+
+Leads with age_days < 90 do not fall into any bucket and are not sellable.
 """
 
 from __future__ import annotations
@@ -20,49 +25,56 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+from typing import Optional
 
-
-def _require_utc_timestamp(name: str, value: datetime) -> None:
-    """
-    Enforces the contract requirement that timestamps are UTC.
-
-    Invariants:
-    - Timestamps must be timezone-aware.
-    - Timestamps must have UTC offset 0.
-    """
-
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError(f"{name} must be timezone-aware (UTC)")
-    if value.utcoffset() != timedelta(0):
-        raise ValueError(f"{name} must be a UTC timestamp (offset 0)")
+from .time import require_utc_timestamp  # type: ignore[import-untyped]
 
 
 class AgeBucket(str, Enum):
-    DAY_0 = "DAY_0"
-    DAY_1 = "DAY_1"
-    DAY_2 = "DAY_2"
-    DAY_3_PLUS = "DAY_3_PLUS"
+    MONTH_3_TO_5 = "MONTH_3_TO_5"
+    MONTH_6_TO_8 = "MONTH_6_TO_8"
+    MONTH_9_TO_11 = "MONTH_9_TO_11"
+    MONTH_12_TO_23 = "MONTH_12_TO_23"
+    MONTH_24_PLUS = "MONTH_24_PLUS"
+
+    @staticmethod
+    def for_age_days(age_days: int) -> Optional["AgeBucket"]:
+        """
+        Resolve an AgeBucket from an integer age in days.
+
+        Returns None if the lead does not fall into any bucket (age_days < 90).
+        Behavior is defined by the contract. No additional bucketing rules exist.
+        """
+
+        if age_days < 0:
+            # The contract defines age_days from (as_of_utc - created_at_utc).
+            # A negative value indicates inconsistent inputs.
+            raise ValueError("age_days must be >= 0")
+
+        if age_days < 90:
+            return None
+        if 90 <= age_days <= 179:
+            return AgeBucket.MONTH_3_TO_5
+        if 180 <= age_days <= 269:
+            return AgeBucket.MONTH_6_TO_8
+        if 270 <= age_days <= 359:
+            return AgeBucket.MONTH_9_TO_11
+        if 360 <= age_days <= 719:
+            return AgeBucket.MONTH_12_TO_23
+        return AgeBucket.MONTH_24_PLUS
 
     @staticmethod
     def from_age_days(age_days: int) -> "AgeBucket":
         """
         Resolve an AgeBucket from an integer age in days.
 
-        Behavior is defined by the contract. No additional bucketing rules exist.
+        Raises if no bucket exists for the age (age_days < 90).
         """
 
-        if age_days < 0:
-            # The contract defines age_days from (current_utc_time - received_at).
-            # A negative value indicates inconsistent inputs.
-            raise ValueError("age_days must be >= 0")
-
-        if age_days == 0:
-            return AgeBucket.DAY_0
-        if age_days == 1:
-            return AgeBucket.DAY_1
-        if age_days == 2:
-            return AgeBucket.DAY_2
-        return AgeBucket.DAY_3_PLUS
+        bucket = AgeBucket.for_age_days(age_days)
+        if bucket is None:
+            raise ValueError("age_days is not eligible for any AgeBucket")
+        return bucket
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,27 +85,36 @@ class LeadAge:
     All timestamps must be passed explicitly; no implicit 'now' is used.
     """
 
-    received_at: datetime
-    current_utc_time: datetime
+    created_at_utc: datetime
+    as_of_utc: datetime
 
     def age_days(self) -> int:
         """
         Compute lead age in whole days per contract:
 
-        age_days = floor((current_utc_time - received_at) / 24 hours)
+        age_days = floor((as_of_utc - created_at_utc) / 24 hours)
         """
 
-        _require_utc_timestamp("received_at", self.received_at)
-        _require_utc_timestamp("current_utc_time", self.current_utc_time)
+        require_utc_timestamp("created_at_utc", self.created_at_utc)
+        require_utc_timestamp("as_of_utc", self.as_of_utc)
 
-        if self.current_utc_time < self.received_at:
-            raise ValueError("current_utc_time must be >= received_at")
+        if self.as_of_utc < self.created_at_utc:
+            raise ValueError("as_of_utc must be >= created_at_utc")
 
-        delta = self.current_utc_time - self.received_at
+        delta = self.as_of_utc - self.created_at_utc
         return int(delta // timedelta(days=1))
 
-    def bucket(self) -> AgeBucket:
-        """Resolve the AgeBucket for this lead age per contract."""
+    def age_months(self) -> int:
+        """
+        Months are fixed 30-day intervals per contract:
 
-        return AgeBucket.from_age_days(self.age_days())
+        age_months = floor(age_days / 30)
+        """
+
+        return self.age_days() // 30
+
+    def bucket(self) -> Optional[AgeBucket]:
+        """Resolve the AgeBucket for this lead age per contract (or None if no bucket applies)."""
+
+        return AgeBucket.for_age_days(self.age_days())
 

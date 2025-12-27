@@ -7,7 +7,6 @@ Governed by:
 
 Contract excerpts implemented here:
 - A Lead represents a single consumer inquiry and is uniquely identified by lead_id (UUID).
-- received_at is a UTC timestamp and is authoritative.
 - Classification occurs exactly once at ingestion time and must not change thereafter.
 - Every Lead must be classified as exactly one of: Gold or Silver.
 """
@@ -15,17 +14,12 @@ Contract excerpts implemented here:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from typing import Any, Mapping
 from uuid import UUID
 
-
-def _require_utc_timestamp(name: str, value: datetime) -> None:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError(f"{name} must be timezone-aware (UTC)")
-    if value.utcoffset() != timedelta(0):
-        raise ValueError(f"{name} must be a UTC timestamp (offset 0)")
+from .time import require_utc_timestamp
 
 
 class LeadClassification(str, Enum):
@@ -48,14 +42,12 @@ class Lead:
     """
 
     lead_id: UUID
-    received_at: datetime
     source: str
     state: str
     raw_payload: Mapping[str, Any]
     classification: LeadClassification
-    created_at: datetime
+    created_at_utc: datetime
 
     def __post_init__(self) -> None:
-        _require_utc_timestamp("received_at", self.received_at)
-        _require_utc_timestamp("created_at", self.created_at)
+        require_utc_timestamp("created_at_utc", self.created_at_utc)
 

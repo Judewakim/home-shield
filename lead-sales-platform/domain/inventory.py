@@ -19,19 +19,13 @@ All timestamps must be passed explicitly.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Mapping, Optional
 from uuid import UUID
 
-from age_bucket import AgeBucket
-from sale import SaleRecord
-
-
-def _require_utc_timestamp(name: str, value: datetime) -> None:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError(f"{name} must be timezone-aware (UTC)")
-    if value.utcoffset() != timedelta(0):
-        raise ValueError(f"{name} must be a UTC timestamp (offset 0)")
+from .age_bucket import AgeBucket
+from .sale import SaleRecord
+from .time import require_utc_timestamp
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +37,11 @@ class InventoryRecord:
     - Inventory is derived, not manually created.
     - Historical Inventory records are immutable; this type models immutability by returning
       a new instance when sold_at is set.
+
+    inventory_id semantics:
+    - Opaque system-generated identifier
+    - Not user-controlled
+    - Not required to be meaningful or parseable
     """
 
     inventory_id: str
@@ -52,9 +51,9 @@ class InventoryRecord:
     sold_at: Optional[datetime] = None
 
     def __post_init__(self) -> None:
-        _require_utc_timestamp("created_at", self.created_at)
+        require_utc_timestamp("created_at", self.created_at)
         if self.sold_at is not None:
-            _require_utc_timestamp("sold_at", self.sold_at)
+            require_utc_timestamp("sold_at", self.sold_at)
 
     @property
     def is_available(self) -> bool:
@@ -69,7 +68,7 @@ class InventoryRecord:
         Enforces the single-sale-per-bucket rule for this (lead_id, age_bucket).
         """
 
-        _require_utc_timestamp("sold_at", sold_at)
+        require_utc_timestamp("sold_at", sold_at)
         if self.sold_at is not None:
             raise ValueError("InventoryRecord is already sold for this age_bucket")
         return InventoryRecord(
@@ -94,6 +93,8 @@ class InventoryLedger:
     """
 
     lead_id: UUID
+    # Conceptually immutable: state transitions return a new InventoryLedger instance.
+    # Internally, we copy into a new dict for updates; that mutability is an implementation detail.
     _by_bucket: Mapping[AgeBucket, InventoryRecord]
 
     @staticmethod
@@ -115,7 +116,7 @@ class InventoryLedger:
           for (lead_id, age_bucket).
         """
 
-        _require_utc_timestamp("created_at", created_at)
+        require_utc_timestamp("created_at", created_at)
 
         existing = self._by_bucket.get(bucket)
         if existing is not None:
@@ -141,7 +142,7 @@ class InventoryLedger:
         - Uniqueness: sale is recorded against the unique InventoryRecord for this bucket.
         """
 
-        _require_utc_timestamp("sold_at", sold_at)
+        require_utc_timestamp("sold_at", sold_at)
 
         record = self._by_bucket.get(bucket)
         if record is None:
