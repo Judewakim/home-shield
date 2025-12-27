@@ -1,6 +1,7 @@
 # Core dependencies
 supabase==2.3.4
 python-dotenv==1.0.0
+tzdata>=2024.1  # Timezone database (required for Windows)
 
 # Testing
 pytest==7.4.3

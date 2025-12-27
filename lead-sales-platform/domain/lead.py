@@ -39,14 +39,55 @@ class Lead:
     - This model does not evaluate Gold criteria; the contract states that criteria
       are defined externally and injected at runtime. This entity only stores the
       resulting classification.
+    - All fields except lead_id, state, classification, and created_at_utc are optional
+    - Empty strings from CSV are preserved as empty strings (not converted to None)
     """
 
+    # Core identifiers (required)
     lead_id: UUID
-    source: str
     state: str
-    raw_payload: Mapping[str, Any]
     classification: LeadClassification
     created_at_utc: datetime
+
+    # Classification fields (optional - empty = Silver)
+    source: str | None = None
+
+    # Mortgage identification
+    mortgage_id: str | None = None
+    campaign_id: str | None = None
+    type: str | None = None
+    status: str | None = None
+
+    # Contact information
+    full_name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    co_borrower_name: str | None = None
+
+    # Address fields
+    address: str | None = None
+    city: str | None = None
+    county: str | None = None
+    zip: str | None = None
+
+    # Financial information
+    mortgage_amount: str | None = None
+    lender: str | None = None
+    sale_date: str | None = None
+
+    # Agent and contact details
+    agent_id: str | None = None
+    call_in_phone_number: str | None = None
+    borrower_phone: str | None = None
+
+    # Qualification fields (for Gold/Silver classification)
+    borrower_age: str | None = None
+    borrower_medical_issues: str | None = None
+    borrower_tobacco_use: str | None = None
+    co_borrower: str | None = None  # Maps to "Co-Borrower ?" column
+
+    # Original timestamp string
+    call_in_date: str | None = None
 
     def __post_init__(self) -> None:
         require_utc_timestamp("created_at_utc", self.created_at_utc)
