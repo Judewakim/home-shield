@@ -12,10 +12,18 @@ Environment variables required:
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 # The dependency is `supabase` (supabase-py). If your editor can't resolve it,
 # install it in your environment: `pip install supabase`.
 from supabase import Client, create_client  # type: ignore[import-not-found]
+
+# Load environment variables from .env file
+# Look for .env in the lead-sales-platform directory
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 # Read credentials from the environment to avoid hard-coding secrets in code.
 SUPABASE_URL: str | None = os.getenv("SUPABASE_URL")

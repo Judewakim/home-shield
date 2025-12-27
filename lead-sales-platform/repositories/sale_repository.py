@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, List, Mapping
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from domain.age_bucket import AgeBucket
 from domain.sale import SaleRecord
@@ -68,7 +68,11 @@ def record_sale(lead_id: UUID, bucket: AgeBucket, sold_at: datetime) -> None:
     - sold_at: UTC timestamp for when the sale occurred
     """
 
+    # Generate a new sale_id
+    sale_id = str(uuid4())
+
     payload: dict[str, Any] = {
+        "sale_id": sale_id,
         "lead_id": str(lead_id),
         "age_bucket": bucket.value,
         "sold_at_utc": _to_iso_utc(sold_at, name="sold_at"),

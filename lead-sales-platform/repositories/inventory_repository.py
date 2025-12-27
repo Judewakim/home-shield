@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, List, Mapping
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from domain.age_bucket import AgeBucket
 from domain.inventory import InventoryRecord
@@ -74,7 +74,11 @@ def create_inventory_record(lead_id: UUID, bucket: AgeBucket, created_at: dateti
     - created_at: UTC timestamp when the inventory record is created
     """
 
+    # Generate a new inventory_id
+    inventory_id = str(uuid4())
+
     payload: dict[str, Any] = {
+        "inventory_id": inventory_id,
         "lead_id": str(lead_id),
         "age_bucket": bucket.value,
         "created_at_utc": _to_iso_utc(created_at, name="created_at"),
