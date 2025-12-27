@@ -45,10 +45,20 @@ Age:
 Age Bucket:
 - An Age Bucket represents a discrete resale eligibility window.
 - Buckets are defined strictly as:
-  - DAY_0: age_days == 0
-  - DAY_1: age_days == 1
-  - DAY_2: age_days == 2
-  - DAY_3_PLUS: age_days >= 3
+    MONTH_3_TO_5:
+    age_days ∈ [  90, 179 ]
+
+    MONTH_6_TO_8:
+    age_days ∈ [ 180, 269 ]
+
+    MONTH_9_TO_11:
+    age_days ∈ [ 270, 359 ]
+
+    MONTH_12_TO_23:
+    age_days ∈ [ 360, 719 ]
+
+    MONTH_24_PLUS:
+    age_days ≥ 720
 
 ========================================
 SECTION 2 — LEAD CLASSIFICATION RULES
@@ -106,12 +116,6 @@ Universal Eligibility Rule:
 - A Lead is eligible for sale in an Age Bucket if:
   - The Lead's age falls within the bucket range
   - No prior sale exists for (lead_id, age_bucket)
-
-Bucket Eligibility (applies to ALL leads):
-- DAY_0: eligible
-- DAY_1: eligible
-- DAY_2: eligible
-- DAY_3_PLUS: eligible
 
 ========================================
 SECTION 5 — SALE CONSTRAINTS
