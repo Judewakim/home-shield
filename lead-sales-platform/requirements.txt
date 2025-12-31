@@ -3,6 +3,11 @@ supabase==2.3.4
 python-dotenv==1.0.0
 tzdata>=2024.1  # Timezone database (required for Windows)
 
+# API dependencies
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.9
+
 # Testing
 pytest==7.4.3
 pytest-cov==4.1.0
