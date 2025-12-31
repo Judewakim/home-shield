@@ -30,6 +30,7 @@ from repositories.inventory_query_repository import (
 from repositories.sale_repository import list_sales_by_client
 from services.pricing_service import calculate_purchase_quote
 from services.purchase_service import PurchaseRequest, execute_purchase
+from services.csv_export_service import generate_csv_for_sales, SecurityError
 
 
 def print_section(title: str) -> None:
@@ -126,6 +127,22 @@ def test_scenario_1_simple_purchase():
             print(f"     Purchase Price: ${sample_sale.purchase_price}")
             print(f"     Currency: {sample_sale.currency}")
             print(f"     Sold At: {sample_sale.sold_at}")
+
+        # Step 6: Generate CSV export
+        print("\n6. Generating CSV export...")
+        csv_content = generate_csv_for_sales(result.sale_ids, client.client_id)
+        csv_lines = csv_content.strip().split('\n')
+
+        print(f"   Generated CSV with {len(csv_lines)} lines (1 header + {len(csv_lines) - 1} data rows)")
+        print(f"   CSV size: {len(csv_content)} bytes")
+
+        # Show preview (header + first 2 rows)
+        print("\n   CSV Preview (header + first 2 rows):")
+        for i, line in enumerate(csv_lines[:3]):
+            if i == 0:
+                print(f"   HEADER: {line[:120]}...")
+            else:
+                print(f"   ROW {i}: {line[:120]}...")
 
     print("\n" + "=" * 80)
     print("SCENARIO 1 COMPLETE")
@@ -242,6 +259,23 @@ def test_scenario_2_mixed_inventory_purchase():
         print(f"   {result.items_replaced} leads were sold during checkout")
         print(f"   System automatically found replacements")
         print(f"   Customer still got all {result.items_requested} leads!")
+
+    # Generate CSV export
+    if result.success:
+        print("\n5. Generating CSV export...")
+        csv_content = generate_csv_for_sales(result.sale_ids, client.client_id)
+        csv_lines = csv_content.strip().split('\n')
+
+        print(f"   Generated CSV with {len(csv_lines)} lines (1 header + {len(csv_lines) - 1} data rows)")
+        print(f"   CSV size: {len(csv_content)} bytes")
+
+        # Show preview (header + first 2 rows)
+        print("\n   CSV Preview (header + first 2 rows):")
+        for i, line in enumerate(csv_lines[:3]):
+            if i == 0:
+                print(f"   HEADER: {line[:120]}...")
+            else:
+                print(f"   ROW {i}: {line[:120]}...")
 
     print("\n" + "=" * 80)
     print("SCENARIO 2 COMPLETE")
