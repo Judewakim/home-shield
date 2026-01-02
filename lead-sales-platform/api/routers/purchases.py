@@ -7,9 +7,20 @@ Endpoints for executing purchases and downloading purchased lead data.
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import StreamingResponse
 
-from api.models import PurchaseRequest as APIPurchaseRequest, PurchaseResponse
+from api.models import (
+    PurchaseRequest as APIPurchaseRequest,
+    CriteriaBasedPurchaseRequest,
+    PurchaseResponse
+)
 from services.purchase_service import PurchaseRequest, execute_purchase
 from services.csv_export_service import generate_csv_for_sales, SecurityError
+from services.inventory_allocation_service import (
+    AllocationCriteria,
+    allocate_inventory_by_criteria,
+    InsufficientInventoryError,
+)
+from domain.lead import LeadClassification
+from domain.age_bucket import AgeBucket
 from repositories.sale_repository import get_sale_by_id
 
 router = APIRouter()
@@ -111,6 +122,132 @@ def execute_lead_purchase(request: APIPurchaseRequest):
             message=message
         )
 
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to execute purchase: {str(e)}"
+        )
+
+
+@router.post(
+    "/purchases/by-criteria",
+    response_model=PurchaseResponse,
+    summary="Execute Purchase by Criteria",
+    description="Purchase leads by specifying criteria (classification, age, location) instead of specific IDs."
+)
+def execute_purchase_by_criteria(request: CriteriaBasedPurchaseRequest):
+    """
+    Execute a purchase by specifying criteria instead of specific inventory IDs.
+
+    This is the recommended approach for lead purchasing as it:
+    - Eliminates race conditions (no stale inventory references)
+    - Automatically selects best available inventory
+    - Supports mixed orders (multiple criteria in one purchase)
+    - Transactionally allocates inventory at purchase time
+
+    **Example request:**
+    ```json
+    {
+      "client_id": "123e4567-e89b-12d3-a456-426614174002",
+      "criteria": [
+        {
+          "classification": "Gold",
+          "age_bucket": "MONTH_6_TO_8",
+          "quantity": 10,
+          "state": "LA"
+        },
+        {
+          "classification": "Silver",
+          "age_bucket": "MONTH_9_TO_11",
+          "quantity": 5,
+          "state": "TX"
+        }
+      ]
+    }
+    ```
+
+    **Success response:**
+    ```json
+    {
+      "success": true,
+      "sale_ids": ["uuid1", "uuid2", ...],
+      "total_paid": "120.00",
+      "items_requested": 15,
+      "items_purchased": 15,
+      "items_replaced": 0,
+      "errors": [],
+      "message": "Purchase completed successfully."
+    }
+    ```
+    """
+    try:
+        # Convert API criteria to service criteria
+        allocation_criteria = []
+        for api_criterion in request.criteria:
+            try:
+                classification = LeadClassification(api_criterion.classification)
+                age_bucket = AgeBucket(api_criterion.age_bucket)
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid classification or age_bucket: {str(e)}"
+                )
+
+            allocation_criteria.append(AllocationCriteria(
+                classification=classification,
+                age_bucket=age_bucket,
+                quantity=api_criterion.quantity,
+                state=api_criterion.state,
+                county=api_criterion.county
+            ))
+
+        # Allocate inventory based on criteria
+        try:
+            allocation_results = allocate_inventory_by_criteria(allocation_criteria)
+        except InsufficientInventoryError as e:
+            raise HTTPException(
+                status_code=409,  # Conflict
+                detail=f"Insufficient inventory: {str(e)}"
+            )
+
+        # Extract allocated inventory IDs
+        inventory_ids = [
+            item.inventory_id
+            for result in allocation_results
+            for item in result.allocated_items
+        ]
+
+        # Execute purchase with allocated inventory
+        service_request = PurchaseRequest(
+            client_id=request.client_id,
+            inventory_item_ids=inventory_ids
+        )
+
+        result = execute_purchase(service_request)
+
+        # Build response message
+        message = None
+        if result.success:
+            if result.items_replaced > 0:
+                message = f"Purchase completed successfully. {result.items_replaced} leads were automatically replaced."
+            else:
+                message = "Purchase completed successfully."
+        else:
+            message = "Purchase failed. " + " ".join(result.errors)
+
+        return PurchaseResponse(
+            success=result.success,
+            sale_ids=result.sale_ids,
+            total_paid=result.total_paid,
+            items_requested=result.items_requested,
+            items_purchased=result.items_purchased,
+            items_replaced=result.items_replaced,
+            errors=result.errors,
+            message=message
+        )
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,

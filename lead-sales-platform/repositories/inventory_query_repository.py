@@ -145,7 +145,11 @@ def query_available_inventory(
         query = query.in_("leads.classification", [c.value for c in filters.classifications])
 
     # Pagination
-    query = query.range(offset, offset + limit - 1)
+    # Note: Use .limit() instead of .range() to avoid off-by-one issues with joins
+    if offset == 0:
+        query = query.limit(limit)
+    else:
+        query = query.range(offset, offset + limit - 1)
 
     # Execute
     response = query.execute()

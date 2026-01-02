@@ -121,8 +121,59 @@ class QuoteResponse(BaseModel):
 # Purchase Models
 # ============================================================================
 
+class PurchaseCriteria(BaseModel):
+    """Criteria for selecting leads to purchase."""
+    classification: str = Field(..., description="Lead classification (Gold or Silver)")
+    age_bucket: str = Field(..., description="Age bucket (e.g., MONTH_6_TO_8)")
+    quantity: int = Field(..., ge=1, le=1000, description="Number of leads to purchase")
+    state: Optional[str] = Field(None, description="Optional state filter (e.g., LA, TX)")
+    county: Optional[str] = Field(None, description="Optional county filter")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "classification": "Gold",
+                "age_bucket": "MONTH_6_TO_8",
+                "quantity": 10,
+                "state": "LA",
+                "county": "Orleans"
+            }
+        }
+
+
+class CriteriaBasedPurchaseRequest(BaseModel):
+    """Request to purchase leads based on criteria instead of specific IDs."""
+    client_id: UUID = Field(..., description="Client ID making the purchase")
+    criteria: List[PurchaseCriteria] = Field(
+        ...,
+        min_length=1,
+        description="List of criteria for lead selection"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "client_id": "123e4567-e89b-12d3-a456-426614174002",
+                "criteria": [
+                    {
+                        "classification": "Gold",
+                        "age_bucket": "MONTH_6_TO_8",
+                        "quantity": 10,
+                        "state": "LA"
+                    },
+                    {
+                        "classification": "Silver",
+                        "age_bucket": "MONTH_9_TO_11",
+                        "quantity": 5,
+                        "state": "TX"
+                    }
+                ]
+            }
+        }
+
+
 class PurchaseRequest(BaseModel):
-    """Request to execute a purchase."""
+    """Request to execute a purchase (legacy - specific inventory IDs)."""
     client_id: UUID = Field(
         ...,
         description="Client ID making the purchase"
