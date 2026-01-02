@@ -119,14 +119,14 @@ def execute_lead_purchase(request: APIPurchaseRequest):
 
 
 @router.get(
-    "/purchases/{sale_id}/download",
+    "/purchases/download",
     summary="Download Purchased Leads CSV",
-    description="Download CSV file containing full lead details for a purchase.",
+    description="Download CSV file containing full lead details for multiple sales.",
     response_class=Response
 )
-def download_purchase_csv(sale_id: str, client_id: str):
+def download_purchase_csv(sale_ids: str, client_id: str):
     """
-    Download CSV export of purchased leads.
+    Download CSV export of purchased leads for multiple sales.
 
     **Authorization:**
     Only the client who made the purchase can download the CSV.
@@ -144,40 +144,50 @@ def download_purchase_csv(sale_id: str, client_id: str):
 
     **Example usage:**
     ```
-    GET /api/v1/purchases/123e4567-e89b-12d3-a456-426614174003/download?client_id=123e4567-e89b-12d3-a456-426614174002
+    GET /api/v1/purchases/download?sale_ids=uuid1,uuid2,uuid3&client_id=123e4567-e89b-12d3-a456-426614174002
     ```
 
     **Response:**
-    CSV file download with filename: `purchased_leads_{sale_id}.csv`
+    CSV file download with filename: `purchased_leads.csv`
     """
     try:
         from uuid import UUID
 
-        # Parse UUIDs
-        try:
-            sale_uuid = UUID(sale_id)
-            client_uuid = UUID(client_id)
-        except ValueError:
+        # Parse sale_ids (comma-separated)
+        sale_id_list = [s.strip() for s in sale_ids.split(',') if s.strip()]
+
+        if not sale_id_list:
             raise HTTPException(
                 status_code=400,
-                detail="Invalid UUID format for sale_id or client_id"
+                detail="At least one sale_id is required"
             )
 
-        # Verify sale exists
-        sale = get_sale_by_id(sale_uuid)
-        if sale is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Sale not found: {sale_id}"
-            )
-
-        # Generate CSV with authorization check
+        # Parse UUIDs
         try:
-            csv_content = generate_csv_for_sales([sale_uuid], client_uuid)
+            sale_uuids = [UUID(sid) for sid in sale_id_list]
+            client_uuid = UUID(client_id)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid UUID format: {str(e)}"
+            )
+
+        # Verify all sales exist
+        for sale_uuid in sale_uuids:
+            sale = get_sale_by_id(sale_uuid)
+            if sale is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Sale not found: {sale_uuid}"
+                )
+
+        # Generate CSV with authorization check (will verify all sales belong to client)
+        try:
+            csv_content = generate_csv_for_sales(sale_uuids, client_uuid)
         except SecurityError as e:
             raise HTTPException(
                 status_code=403,
-                detail=f"Not authorized to download this sale: {str(e)}"
+                detail=f"Not authorized to download these sales: {str(e)}"
             )
 
         # Return CSV as downloadable file
@@ -185,7 +195,7 @@ def download_purchase_csv(sale_id: str, client_id: str):
             content=csv_content,
             media_type="text/csv",
             headers={
-                "Content-Disposition": f"attachment; filename=purchased_leads_{sale_id}.csv"
+                "Content-Disposition": f"attachment; filename=purchased_leads.csv"
             }
         )
 
