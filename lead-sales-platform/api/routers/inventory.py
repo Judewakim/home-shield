@@ -21,6 +21,43 @@ router = APIRouter()
 
 
 @router.get(
+    "/inventory/locations",
+    summary="Get Available Locations",
+    description="Get list of available states and counties that have inventory."
+)
+def get_available_locations():
+    """
+    Get available states and counties from the database.
+
+    Returns:
+        Dictionary with states and counties_by_state
+    """
+    from repositories.client import supabase
+
+    try:
+        # Get unique states
+        states_response = supabase.table('leads').select('state').execute()
+        states = sorted(set(row['state'] for row in states_response.data if row.get('state')))
+
+        # Get counties by state
+        counties_by_state = {}
+        for state in states:
+            counties_response = supabase.table('leads').select('county').eq('state', state).execute()
+            counties = sorted(set(row['county'] for row in counties_response.data if row.get('county')))
+            counties_by_state[state] = counties
+
+        return {
+            "states": states,
+            "counties_by_state": counties_by_state
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch locations: {str(e)}"
+        )
+
+
+@router.get(
     "/inventory",
     response_model=InventoryListResponse,
     summary="Query Available Inventory",
