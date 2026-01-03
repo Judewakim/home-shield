@@ -27,12 +27,29 @@ from repositories.inventory_query_repository import (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class InventoryAlternative:
+    """Alternative inventory options when requested criteria cannot be fulfilled."""
+    description: str
+    available_count: int
+    suggestion_type: str  # "partial", "no_location_filter", "different_age_bucket"
+
+
 class InsufficientInventoryError(Exception):
     """Raised when requested inventory cannot be fulfilled."""
-    def __init__(self, requested: int, available: int, criteria: str):
+    def __init__(
+        self,
+        requested: int,
+        available: int,
+        criteria: str,
+        alternatives: Optional[List[InventoryAlternative]] = None,
+        item_index: Optional[int] = None
+    ):
         self.requested = requested
         self.available = available
         self.criteria = criteria
+        self.alternatives = alternatives or []
+        self.item_index = item_index
         super().__init__(
             f"Insufficient inventory for {criteria}. "
             f"Requested: {requested}, Available: {available}"
@@ -69,6 +86,107 @@ class AllocationResult:
     requested_quantity: int
     allocated_quantity: int
     criteria: AllocationCriteria
+
+
+def _get_inventory_alternatives(
+    criterion: AllocationCriteria,
+    current_available: int
+) -> List[InventoryAlternative]:
+    """
+    Generate alternative inventory suggestions when requested quantity cannot be fulfilled.
+
+    Returns suggestions for:
+    1. Partial purchase (buy what's available)
+    2. Remove location filter (if state/county specified)
+    3. Try different age buckets
+    """
+    alternatives = []
+
+    # Option 1: Partial purchase (if any available)
+    if current_available > 0:
+        price = current_available * (5.00 if criterion.classification == LeadClassification.GOLD else 4.00)
+        alternatives.append(InventoryAlternative(
+            description=f"Purchase {current_available} available leads (${price:.2f})",
+            available_count=current_available,
+            suggestion_type="partial"
+        ))
+
+    # Option 2: Remove location filter (if applicable)
+    if criterion.state or criterion.county:
+        filters_no_location = InventoryQueryFilters(
+            classifications=[criterion.classification],
+            age_buckets=[criterion.age_bucket],
+            states=None,
+            counties=None,
+            available_only=True
+        )
+        from repositories.inventory_query_repository import query_available_inventory
+        items_no_location = query_available_inventory(filters_no_location, limit=10000)
+        count_no_location = len(items_no_location)
+
+        if count_no_location > current_available:
+            location_desc = f"{criterion.state}" if criterion.state else ""
+            if criterion.county:
+                location_desc = f"{criterion.county}, {location_desc}" if location_desc else criterion.county
+
+            alternatives.append(InventoryAlternative(
+                description=f"Remove location filter ({count_no_location} available without {location_desc} filter)",
+                available_count=count_no_location,
+                suggestion_type="no_location_filter"
+            ))
+
+    # Option 3: Try different age buckets (adjacent ones)
+    age_bucket_alternatives = _get_adjacent_age_buckets(criterion.age_bucket)
+    for alt_bucket in age_bucket_alternatives:
+        filters_alt = InventoryQueryFilters(
+            classifications=[criterion.classification],
+            age_buckets=[alt_bucket],
+            states=[criterion.state] if criterion.state else None,
+            counties=[criterion.county] if criterion.county else None,
+            available_only=True
+        )
+        from repositories.inventory_query_repository import query_available_inventory
+        items_alt = query_available_inventory(filters_alt, limit=10000)
+        count_alt = len(items_alt)
+
+        if count_alt >= criterion.quantity:
+            location_part = f" in {criterion.state}" if criterion.state else ""
+            alternatives.append(InventoryAlternative(
+                description=f"Try {alt_bucket.value} age bucket ({count_alt} available{location_part})",
+                available_count=count_alt,
+                suggestion_type="different_age_bucket"
+            ))
+            # Only show first 2 age bucket alternatives
+            if len([a for a in alternatives if a.suggestion_type == "different_age_bucket"]) >= 2:
+                break
+
+    return alternatives
+
+
+def _get_adjacent_age_buckets(current_bucket: AgeBucket) -> List[AgeBucket]:
+    """Get adjacent age buckets for suggesting alternatives."""
+    bucket_order = [
+        AgeBucket.MONTH_3_TO_5,
+        AgeBucket.MONTH_6_TO_8,
+        AgeBucket.MONTH_9_TO_11,
+        AgeBucket.MONTH_12_TO_23,
+        AgeBucket.MONTH_24_PLUS,
+    ]
+
+    try:
+        current_idx = bucket_order.index(current_bucket)
+    except ValueError:
+        return []
+
+    adjacent = []
+    # Add next bucket
+    if current_idx + 1 < len(bucket_order):
+        adjacent.append(bucket_order[current_idx + 1])
+    # Add previous bucket
+    if current_idx - 1 >= 0:
+        adjacent.append(bucket_order[current_idx - 1])
+
+    return adjacent
 
 
 def allocate_inventory_by_criteria(
@@ -112,7 +230,7 @@ def allocate_inventory_by_criteria(
 
     results = []
 
-    for criterion in criteria_list:
+    for idx, criterion in enumerate(criteria_list):
         # Build mixed inventory request
         states = [criterion.state] if criterion.state else None
         counties = [criterion.county] if criterion.county else None
@@ -132,10 +250,15 @@ def allocate_inventory_by_criteria(
 
         # Validate we got the requested quantity
         if len(allocated_items) < criterion.quantity:
+            # Generate alternatives
+            alternatives = _get_inventory_alternatives(criterion, len(allocated_items))
+
             raise InsufficientInventoryError(
                 requested=criterion.quantity,
                 available=len(allocated_items),
-                criteria=criterion.to_string()
+                criteria=criterion.to_string(),
+                alternatives=alternatives,
+                item_index=idx if len(criteria_list) > 1 else None
             )
 
         # Store result
@@ -196,6 +319,7 @@ __all__ = [
     "AllocationCriteria",
     "AllocationResult",
     "InsufficientInventoryError",
+    "InventoryAlternative",
     "allocate_inventory_by_criteria",
     "validate_inventory_availability",
 ]

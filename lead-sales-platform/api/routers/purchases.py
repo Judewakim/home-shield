@@ -205,9 +205,28 @@ def execute_purchase_by_criteria(request: CriteriaBasedPurchaseRequest):
         try:
             allocation_results = allocate_inventory_by_criteria(allocation_criteria)
         except InsufficientInventoryError as e:
+            # Build detailed error message with alternatives
+            error_detail = {
+                "error": "insufficient_inventory",
+                "message": str(e),
+                "requested": e.requested,
+                "available": e.available,
+                "criteria": e.criteria,
+                "item_index": e.item_index,
+                "is_multi_item": len(allocation_criteria) > 1,
+                "total_items": len(allocation_criteria),
+                "alternatives": [
+                    {
+                        "description": alt.description,
+                        "available_count": alt.available_count,
+                        "suggestion_type": alt.suggestion_type
+                    }
+                    for alt in e.alternatives
+                ]
+            }
             raise HTTPException(
                 status_code=409,  # Conflict
-                detail=f"Insufficient inventory: {str(e)}"
+                detail=error_detail
             )
 
         # Extract allocated inventory IDs
